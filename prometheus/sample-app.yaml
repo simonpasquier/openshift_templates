@@ -1,0 +1,60 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: sample-app
+  annotations:
+    "openshift.io/display-name": Sample application
+    description: |
+      A sample application that can be monitored by Prometheus.
+    iconClass: icon-cogs
+    tags: "monitoring,prometheus,time-series"
+objects:
+- apiVersion: extensions/v1beta1
+  kind: Deployment
+  metadata:
+    labels:
+      app: sample-app
+    name: sample-app
+  spec:
+    replicas: 2
+    selector:
+      matchLabels:
+        app: sample-app
+    template:
+      metadata:
+        labels:
+          app: sample-app
+      spec:
+        containers:
+        - image: luxas/autoscale-demo:v0.1.2
+          name: sample-app
+          ports:
+          - name: web
+            containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      prometheus.io/scrape: 'true'
+    labels:
+      app: sample-app
+    name: sample-app
+  spec:
+    ports:
+    - name: web
+      port: 80
+      targetPort: 8080
+    selector:
+      app: sample-app
