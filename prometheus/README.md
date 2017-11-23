@@ -1,10 +1,38 @@
-# Prometheus
+These templates allow to deploy a single Prometheus instance that can monitor
+applications in a given namespace.
 
-`prometheus.yaml` deploys a single instance of Prometheus
-that can monitor applications running in a given project without requiring
-cluster-wide permissions for the Prometheus service account.
+Depending on your grants, it can either:
 
-It requires admin permissions on the namespace to be deployed successfully.
+* Monitor only the application metrics (it requires only the ability to create
+  roles and bindings in the namespace).
+* Monitor the application and container metrics (it requires the ability to
+  create cluster-wide roles and bindings).
+
+# Setting up the Prometheus account
+
+Create the Prometheus service account with permissions to view services, endpoints and pods:
+
+```
+oc apply -f prometheus-service-account.yaml
+```
+
+Add permissions to view the nodes if you want to get the container metrics:
+
+```
+oc apply -f node-monitoring-permissions.yaml
+```
+
+# Deploying Prometheus
+
+`prometheus.yaml` deploys a single instance of Prometheus.
+
+With application metrics only:
+
+```
+oc new-app -f prometheus.yaml --param NAMESPACE=myproject
+```
+
+With container and application metrics only:
 
 ```
 oc new-app -f prometheus.yaml --param NAMESPACE=myproject
@@ -18,13 +46,17 @@ NAME         HOST/PORT                               PATH      SERVICES     PORT
 prometheus   prometheus-myproject.127.0.0.1.nip.io             prometheus   <all>                   None
 ```
 
-# Sample application
+# Deploying the sample application
 
-`sample_app.yaml` deploys a sample application that will be automatically
-monitored by Prometheus. It can be deployed by any user of the namespace.
+`sample_app.yaml` deploys a sample application with 2 replicas that will be
+automatically monitored by Prometheus. It can be deployed by any user of the
+namespace.
 
 ```
-oc new-app -f prometheus.yaml --param NAMESPACE=myproject
+oc new-app -f sample-app.yaml
 ```
 
 After a while, you should see that Prometheus has discovered 2 new targets.
+
+You can also scale up and down the number of pods up and check that Prometheus
+adds/removes targets consequently.

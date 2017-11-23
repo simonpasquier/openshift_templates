@@ -1,5 +1,6 @@
 apiVersion: template.openshift.io/v1
 kind: Template
+
 metadata:
   name: prometheus
   annotations:
@@ -8,53 +9,22 @@ metadata:
       A monitoring solution to get metrics and alerts for applications running in a namespace.
     iconClass: icon-cogs
     tags: "monitoring,prometheus,time-series"
+
 parameters:
 - description: The namespace where to deploy the Prometheus service.
   name: NAMESPACE
   required: true
-- description: The location of the prometheus image
+- description: The Prometheus service account (must be created beforehand).
+  name: PROMETHEUS_SA
+  value: prometheus
+- description: The Prometheus configuration (either app-monitoring or full-monitoring).
+  name: PROMETHEUS_CONFIG
+  value: app-monitoring
+- description: The location of the prometheus image.
   name: IMAGE_PROMETHEUS
   value: openshift/prometheus:v2.0.0
+
 objects:
-
-# Prometheus requires a service account in the namespace
-- apiVersion: v1
-  kind: ServiceAccount
-  metadata:
-    name: prometheus
-    namespace: "${NAMESPACE}"
-
-# Custom role for listing services/endpoints/pods in the given namespace
-- apiVersion: v1
-  kind: Role
-  metadata:
-    name: prometheus-reader
-    namespace: "${NAMESPACE}"
-  rules:
-  - apiGroups: null
-    attributeRestrictions: null
-    resources:
-    - pods
-    - endpoints
-    - services
-    verbs:
-    - get
-    - list
-    - watch
-
-- apiVersion: v1
-  kind: RoleBinding
-  metadata:
-    name: prometheus-reader
-    namespace: "${NAMESPACE}"
-  roleRef:
-    name: prometheus-reader
-    namespace: "${NAMESPACE}"
-  subjects:
-  - kind: ServiceAccount
-    name: prometheus
-
-# Expose Prometheus as a service
 - apiVersion: v1
   kind: Service
   metadata:
@@ -100,7 +70,7 @@ objects:
           app: prometheus
         name: prometheus
       spec:
-        serviceAccountName: prometheus
+        serviceAccountName: "${PROMETHEUS_SA}"
         containers:
         - name: prometheus
           args:
@@ -129,7 +99,7 @@ objects:
         volumes:
         - configMap:
             defaultMode: 420
-            name: prometheus
+            name: "${PROMETHEUS_CONFIG}"
           name: config-volume
         - emptyDir: {}
           name: data-volume
@@ -139,7 +109,7 @@ objects:
   metadata:
     label:
       app: prometheus
-    name: prometheus
+    name: app-monitoring
     namespace: "${NAMESPACE}"
   data:
     prometheus.rules: |
@@ -147,7 +117,7 @@ objects:
       - name: example-rules
         interval: 30s # defaults to global interval
         rules:
-        - alert: Node Down
+        - alert: Target Down
           expr: up == 0
           for: 1m
           annotations:
@@ -162,11 +132,9 @@ objects:
       - job_name: 'prometheus'
         static_configs:
         - targets: ['localhost:9090']
-      - job_name: 'endpoints'
 
+      - job_name: 'endpoints'
         tls_config:
-          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-          # TODO: this should be per target
           insecure_skip_verify: true
 
         kubernetes_sd_configs:
@@ -177,6 +145,9 @@ objects:
 
         relabel_configs:
         - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_endpoint_ready]
           action: keep
           regex: true
         - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
@@ -204,4 +175,102 @@ objects:
           regex: __meta_kubernetes_service_label_(.+)
         - source_labels: [__meta_kubernetes_service_name]
           action: replace
-          target_label: kubernetes_name
+          target_label: service_name
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    label:
+      app: prometheus
+    name: full-monitoring
+    namespace: "${NAMESPACE}"
+  data:
+    prometheus.rules: |
+      groups:
+      - name: example-rules
+        interval: 30s # defaults to global interval
+        rules:
+        - alert: Target Down
+          expr: up == 0
+          for: 1m
+          annotations:
+            severity: "Critical"
+            message: "Instance {{ $labels.instance }} for job {{ $labels.job }} is down"
+
+    prometheus.yml: |
+      rule_files:
+        - 'prometheus.rules'
+
+      scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+        - targets: ['localhost:9090']
+
+      # TODO: use the proxy API for Kubernetes >= 1.7 since kubelet doesn't
+      # expose anymore the container metrics directly
+      - job_name: 'container_metrics'
+
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        # The node metrics endpoint requires a bearer token to be scraped
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+        kubernetes_sd_configs:
+        - role: node
+
+        # Store only the container metrics applying to the current namespace
+        metric_relabel_configs:
+        - source_labels: [ namespace ]
+          action: keep
+          regex: "${NAMESPACE}"
+
+      - job_name: 'app_metrics'
+        tls_config:
+          insecure_skip_verify: true
+
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_endpoint_ready]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+          action: replace
+          target_label: __address__
+          regex: (.+)(?::\d+);(\d+)
+          replacement: $1:$2
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_username]
+          action: replace
+          target_label: __basic_auth_username__
+          regex: (.+)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_password]
+          action: replace
+          target_label: __basic_auth_password__
+          regex: (.+)
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+        - source_labels: [__meta_kubernetes_service_name]
+          action: replace
+          target_label: service_name
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          action: replace
+          target_label: container_name
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: pod_name

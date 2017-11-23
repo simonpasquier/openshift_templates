@@ -1,0 +1,33 @@
+# Cluster role to view nodes and their metircs
+apiVersion: v1
+kind: ClusterRole
+metadata:
+  name: system:prometheus-node-reader
+rules:
+- apiGroups:
+  - ""
+  attributeRestrictions: null
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  attributeRestrictions: null
+  resources:
+  - nodes/metrics
+  verbs:
+  - get
+---
+apiVersion: v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:prometheus-node-reader
+roleRef:
+  name: system:prometheus-node-reader
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: myproject
