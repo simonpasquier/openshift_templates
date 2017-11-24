@@ -8,6 +8,12 @@ Depending on your grants, it can either:
 * Monitor the application and container metrics (it requires the ability to
   create cluster-wide roles and bindings).
 
+# Compatibility
+
+This example has only be tested with OpenShift 3.6. In particular, it will
+require some changes for Kubernetes >= 1.7.3 since the 'container_' metrics are
+now exposed by the Kubelet service at /metrics/cadvisor instead of /metrics.
+
 # Setting up the Prometheus account
 
 Create the Prometheus service account with permissions to view services,
