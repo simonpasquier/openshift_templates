@@ -26,20 +26,22 @@ objects:
           app: sample-app
       spec:
         containers:
-        - image: luxas/autoscale-demo:v0.1.2
+        - image: simonpasquier/instrumented_app
           name: sample-app
+          args:
+          - --listen=0.0.0.0:8080
           ports:
           - name: web
             containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /
+              path: /-/ready
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /
+              path: /-/healthy
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 5
