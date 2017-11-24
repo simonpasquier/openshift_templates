@@ -10,13 +10,15 @@ Depending on your grants, it can either:
 
 # Setting up the Prometheus account
 
-Create the Prometheus service account with permissions to view services, endpoints and pods:
+Create the Prometheus service account with permissions to view services,
+endpoints and pods:
 
 ```
 oc apply -f prometheus-service-account.yaml
 ```
 
-Add permissions to view the nodes if you want to get the container metrics:
+Add permissions to view the nodes resources if you want to get the container
+metrics:
 
 ```
 oc apply -f node-monitoring-permissions.yaml
