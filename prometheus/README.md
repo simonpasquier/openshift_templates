@@ -43,7 +43,7 @@ oc new-app -f prometheus.yaml --param NAMESPACE=myproject
 With container and application metrics only:
 
 ```
-oc new-app -f prometheus.yaml --param NAMESPACE=myproject
+oc new-app -f prometheus.yaml --param NAMESPACE=myproject --param PROMETHEUS_CONFIG=full-monitoring
 ```
 
 Retrieve the hostname to access the Prometheus UI:
