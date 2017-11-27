@@ -1,33 +1,50 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+
+metadata:
+  name: prometheus-sa
+  annotations:
+    "openshift.io/display-name": Prometheus node permissions
+    description: |
+      Node permissions for the Prometheus service account.
+    iconClass: icon-cogs
+    tags: "monitoring,prometheus,time-series"
+
+parameters:
+- description: The namespace where to deploy the Prometheus service.
+  name: NAMESPACE
+  required: true
+
+objects:
 # Cluster role to view nodes and their metircs
-apiVersion: v1
-kind: ClusterRole
-metadata:
-  name: system:prometheus-node-reader
-rules:
-- apiGroups:
-  - ""
-  attributeRestrictions: null
-  resources:
-  - nodes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  attributeRestrictions: null
-  resources:
-  - nodes/metrics
-  verbs:
-  - get
----
-apiVersion: v1
-kind: ClusterRoleBinding
-metadata:
-  name: system:prometheus-node-reader
-roleRef:
-  name: system:prometheus-node-reader
-subjects:
-- kind: ServiceAccount
-  name: prometheus
-  namespace: myproject
+- apiVersion: v1
+  kind: ClusterRole
+  metadata:
+    name: system:prometheus-node-reader
+  rules:
+  - apiGroups:
+    - ""
+    attributeRestrictions: null
+    resources:
+    - nodes
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    attributeRestrictions: null
+    resources:
+    - nodes/metrics
+    verbs:
+    - get
+- apiVersion: v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: system:prometheus-node-reader
+  roleRef:
+    name: system:prometheus-node-reader
+  subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: "${NAMESPACE}"

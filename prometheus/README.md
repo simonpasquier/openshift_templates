@@ -20,14 +20,14 @@ Create the Prometheus service account with permissions to view services,
 endpoints and pods:
 
 ```
-oc apply -f prometheus-service-account.yaml
+oc process -f prometheus-service-account.yaml --param NAMESPACE=myproject | oc create -f -
 ```
 
 Add permissions to view the nodes resources if you want to get the container
 metrics:
 
 ```
-oc apply -f node-monitoring-permissions.yaml
+oc process -f node-monitoring-permissions.yaml --param NAMESPACE=myproject | oc create -f -
 ```
 
 # Deploying Prometheus
