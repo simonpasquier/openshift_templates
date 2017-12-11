@@ -1,4 +1,5 @@
-This template deploys the (kube-state-metrics)[https://github.com/kubernetes/kube-state-metrics] service.
+This template deploys the
+[kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) service.
 
 # Compatibility
 
