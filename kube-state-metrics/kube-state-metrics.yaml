@@ -28,6 +28,7 @@ objects:
   metadata:
     name: kube-state-metrics
     namespace: "${NAMESPACE}"
+
 - apiVersion: v1
   kind: ClusterRole
   metadata:
@@ -59,6 +60,8 @@ objects:
     - cronjobs
     - jobs
     verbs: ["list", "watch"]
+
+# Grant permissions to read cluster resources
 - apiVersion: v1
   kind: ClusterRoleBinding
   metadata:
@@ -71,23 +74,46 @@ objects:
     name: kube-state-metrics
     namespace: "${NAMESPACE}"
 
+# Grant permissions to authenticate/authorize clients using tokens
+- apiVersion: v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: kube-state-metrics-auth
+  roleRef:
+    kind: ClusterRole
+    name: system:auth-delegator
+  subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: "${NAMESPACE}"
+
 - apiVersion: v1
   kind: Service
   metadata:
-    name: kube-state-metrics
+    name: ksm-proxy
     namespace: "${NAMESPACE}"
     labels:
       app: kube-state-metrics
     annotations:
       prometheus.io/scrape: 'true'
+      prometheus.io/scheme: https
+      service.alpha.openshift.io/serving-cert-secret-name: ksm-tls
   spec:
     ports:
-    - name: http-metrics
-      port: 8080
-      targetPort: http-metrics
+    - name: ksm-proxy
+      port: 443
       protocol: TCP
+      targetPort: 8443
     selector:
       app: kube-state-metrics
+
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ksm-secrets
+    namespace: "${NAMESPACE}"
+  stringData:
+    session_secret: "${SESSION_SECRET}="
 
 - apiVersion: apps/v1beta1
   kind: Deployment
@@ -106,14 +132,43 @@ objects:
       spec:
         serviceAccountName: kube-state-metrics
         containers:
+        # Deploy kube-state-metrics behind an oauth proxy
+        - name: ksm-proxy
+          image: ${IMAGE_PROXY}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 8443
+          args:
+          - -provider=openshift
+          - -https-address=:8443
+          - -http-address=
+          - -email-domain=*
+          - -upstream=http://localhost:8080
+          - -client-id=system:serviceaccount:${NAMESPACE}:kube-state-metrics
+          - -openshift-ca=/etc/pki/tls/cert.pem
+          - -openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          - '-openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get", "resourceName": "${NAMESPACE}", "namespace": "${NAMESPACE}"}}'
+          - -tls-cert=/etc/tls/private/tls.crt
+          - -tls-key=/etc/tls/private/tls.key
+          - -client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+          - -cookie-secret-file=/etc/proxy/secrets/session_secret
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: ksm-tls
+          - mountPath: /etc/proxy/secrets
+            name: ksm-secrets
         - name: kube-state-metrics
           image: "${IMAGE_KUBE_STATE_METRICS}"
-          ports:
-          - name: http-metrics
-            containerPort: 8080
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 5
             timeoutSeconds: 5
+        volumes:
+        - name: ksm-secrets
+          secret:
+            secretName: ksm-secrets
+        - name: ksm-tls
+          secret:
+            secretName: ksm-tls

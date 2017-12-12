@@ -1,5 +1,6 @@
 This template deploys the
-[kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) service.
+[kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) service
+behind an [OAuth proxy](https://github.com/openshift/oauth-proxy).
 
 # Compatibility
 
