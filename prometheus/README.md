@@ -40,7 +40,7 @@ With application metrics only:
 oc new-app -f prometheus.yaml --param NAMESPACE=myproject
 ```
 
-With container and application metrics only:
+With container and application metrics:
 
 ```
 oc new-app -f prometheus.yaml --param NAMESPACE=myproject --param PROMETHEUS_CONFIG=full-monitoring
