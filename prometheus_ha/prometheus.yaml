@@ -1,0 +1,345 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+
+metadata:
+  name: prometheus_ha
+  annotations:
+    "openshift.io/display-name": Prometheus_ha
+    description: |
+      A monitoring solution to get metrics and alerts for applications running in a namespace.
+    iconClass: icon-cogs
+    tags: "monitoring,prometheus,time-series"
+
+parameters:
+- description: The namespace where to deploy the Prometheus service.
+  name: NAMESPACE
+  required: true
+- description: The Prometheus service account (must be created beforehand).
+  name: PROMETHEUS_SA
+  value: prometheus
+- description: The location of the Prometheus image.
+  name: IMAGE_PROMETHEUS
+  value: openshift/prometheus:v2.0.0
+- description: The location of the AlertManager image.
+  name: IMAGE_ALERTMANAGER
+  value: openshift/prometheus-alertmanager:v0.9.1
+- description: The secret for the AlertManager services
+  name: ALERTMANAGER_SECRET
+  generate: expression
+  from: "[a-zA-Z0-9]{43}"
+
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: prometheus
+    namespace: "${NAMESPACE}"
+  spec:
+    ports:
+    - name: prometheus
+      port: 8080
+      protocol: TCP
+      targetPort: 9090
+    selector:
+      app: prometheus
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: alertmanager
+    namespace: "${NAMESPACE}"
+  spec:
+    ports:
+    - name: alertmanager
+      port: 8080
+      protocol: TCP
+      targetPort: 9093
+    selector:
+      app: alertmanager
+
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: prometheus
+    namespace: "${NAMESPACE}"
+  spec:
+    to:
+      name: prometheus
+
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: alertmanager
+    namespace: "${NAMESPACE}"
+  spec:
+    to:
+      name: alertmanager
+
+- apiVersion: apps/v1beta1
+  kind: StatefulSet
+  metadata:
+    labels:
+      app: prometheus
+    name: prometheus
+    namespace: "${NAMESPACE}"
+  spec:
+    selector:
+      matchLabels:
+        app: prometheus
+    updateStrategy:
+      type: RollingUpdate
+    podManagementPolicy: Parallel
+    replicas: 2
+    template:
+      metadata:
+        labels:
+          app: prometheus
+        name: prometheus
+      spec:
+        serviceAccountName: "${PROMETHEUS_SA}"
+        containers:
+        - name: prometheus
+          args:
+          - --storage.tsdb.retention=6h
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --web.enable-admin-api
+          image: ${IMAGE_PROMETHEUS}
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+          - mountPath: /etc/prometheus
+            name: prometheus-config
+          - mountPath: /prometheus
+            name: prometheus-data
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 10
+          ports:
+          - containerPort: 9090
+            name: web
+            protocol: TCP
+        restartPolicy: Always
+        volumes:
+        - configMap:
+            defaultMode: 420
+            name: prometheus-config
+          name: prometheus-config
+        - emptyDir: {}
+          name: prometheus-data
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: prometheus-config
+    namespace: "${NAMESPACE}"
+  data:
+    prometheus.rules: |
+      groups:
+      - name: example-rules
+        interval: 30s # defaults to global interval
+        rules:
+        - alert: Target Down
+          expr: up == 0
+          for: 1m
+          annotations:
+            severity: "Critical"
+            message: "Instance {{ $labels.instance }} for job {{ $labels.job }} is down"
+
+    prometheus.yml: |
+      rule_files:
+        - 'prometheus.rules'
+
+      alerting:
+        alertmanagers:
+        - scheme: http
+          kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+              - "${NAMESPACE}"
+
+          relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: alertmanager
+          - source_labels: [__meta_kubernetes_endpoint_ready]
+            action: keep
+            regex: true
+
+      scrape_configs:
+      - job_name: 'prometheus'
+        scheme: http
+
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_name]
+          action: keep
+          regex: prometheus
+        - source_labels: [__meta_kubernetes_endpoint_ready]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          action: keep
+          regex: prometheus
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: instance
+
+      - job_name: 'alertmanager'
+        scheme: http
+
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_name]
+          action: keep
+          regex: alertmanager
+        - source_labels: [__meta_kubernetes_endpoint_ready]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          action: keep
+          regex: alertmanager
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: instance
+
+      - job_name: 'endpoints'
+        tls_config:
+          insecure_skip_verify: true
+
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_endpoint_ready]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+          action: replace
+          target_label: __address__
+          regex: (.+)(?::\d+);(\d+)
+          replacement: $1:$2
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_username]
+          action: replace
+          target_label: __basic_auth_username__
+          regex: (.+)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_password]
+          action: replace
+          target_label: __basic_auth_password__
+          regex: (.+)
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+        - source_labels: [__meta_kubernetes_service_name]
+          action: replace
+          target_label: service_name
+
+- apiVersion: apps/v1beta1
+  kind: StatefulSet
+  metadata:
+    name: alertmanager
+    namespace: "${NAMESPACE}"
+  spec:
+    selector:
+      matchLabels:
+        app: alertmanager
+    updateStrategy:
+      type: RollingUpdate
+    podManagementPolicy: Parallel
+    replicas: 2
+    template:
+      metadata:
+        labels:
+          app: alertmanager
+        name: alertmanager
+      spec:
+        serviceAccountName: "${PROMETHEUS_SA}"
+        containers:
+        - name: alertmanager
+          args:
+          - --log.level=debug
+          - --mesh.listen-address=:6783
+          # Declare only the first pod as peer otherwise the mesh library
+          # messes up with "multiple connections" errors.
+          - --mesh.peer=alertmanager-0.alertmanager.${NAMESPACE}.endpoints:6783
+          - --mesh.password=${ALERTMANAGER_SECRET}
+          - --config.file=/etc/alertmanager/alertmanager.yml
+          image: "${IMAGE_ALERTMANAGER}"
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9093
+            name: web
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /etc/alertmanager
+            name: alertmanager-config
+          - mountPath: /alertmanager
+            name: alertmanager-data
+
+        restartPolicy: Always
+        volumes:
+        - configMap:
+            defaultMode: 420
+            name: alertmanager-config
+          name: alertmanager-config
+        - emptyDir: {}
+          name: alertmanager-data
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    label:
+      app: prometheus
+    name: alertmanager-config
+    namespace: "${NAMESPACE}"
+  data:
+    alertmanager.yml: |
+      global:
+
+      # The root route on which each incoming alert enters.
+      route:
+        # default route if none match
+        receiver: alert-buffer-wh
+
+        # The labels by which incoming alerts are grouped together. For example,
+        # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
+        # be batched into a single group.
+        # TODO:
+        group_by: []
+
+        # All the above attributes are inherited by all child routes and can
+        # overwritten on each.
+
+      receivers:
+      - name: alert-buffer-wh
+        webhook_configs:
+        - url: http://localhost:9099/topics/alerts
