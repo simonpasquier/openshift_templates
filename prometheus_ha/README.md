@@ -1,12 +1,13 @@
 These templates allow to deploy a pair of Prometheus/AlertManager instances
-for high availability.
+for high availability. OAuth proxies run in front of the services for
+authentication/authorization.
 
-The Prometheus servers retrievs the list of AlertManager instances through the
-Kubernetes service discovery.
+Note that the Prometheus servers retrieve the list of AlertManager instances
+through the Kubernetes service discovery.
 
 # Compatibility
 
-This example has only be tested with OpenShift 3.7. Note that because of an
+This example has only be tested with OpenShift 3.7. Because of an
 [issue](https://github.com/openshift/origin/issues/13401) with DNS resolution,
 AlertManager instances won't setup the mesh automatically. To workaround the
 problem, you need to add the `hostname` field to the endpoints defintion:
@@ -17,16 +18,18 @@ $ oc edit endpoints/alertmanager
 
 # Setting up the Prometheus account
 
-Create the Prometheus service account with permissions to view services,
-endpoints and pods:
+Create the Prometheus service account:
 
 ```
 oc process -f prometheus-service-account.yaml --param NAMESPACE=myproject | oc create -f -
 ```
 
+The service account is granted the system-auth-delegator role because this is
+what OAuth Proxy needs to validate bearer tokens.
+
 # Deploying Prometheus
 
-`prometheus.yaml` deploys a single instance of Prometheus.
+`prometheus.yaml` deploys 2 Prometheus and 2 AlertManager as StatefulSets.
 
 ```
 oc new-app -f prometheus.yaml --param NAMESPACE=myproject
