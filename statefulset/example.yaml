@@ -1,0 +1,51 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+
+metadata:
+  name: statefulset-example
+  description: |
+    A simple example exercising the StatefulSet resource.
+
+
+objects:
+# Headless service to resolve pod names
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: example
+  spec:
+    ports:
+    - name: example
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    clusterIP: None
+    selector:
+      app: example
+
+- apiVersion: apps/v1beta1
+  kind: StatefulSet
+  metadata:
+    name: example
+  spec:
+    selector:
+      matchLabels:
+        app: example
+    updateStrategy:
+      type: RollingUpdate
+    podManagementPolicy: Parallel
+    replicas: 2
+    template:
+      metadata:
+        labels:
+          app: example
+        name: example
+      spec:
+        containers:
+        - name: example
+          args:
+          - /bin/sleep
+          - "3600"
+          image: debian:stretch
+          imagePullPolicy: IfNotPresent
+        restartPolicy: Always
