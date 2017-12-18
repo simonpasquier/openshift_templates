@@ -26,6 +26,9 @@ parameters:
 - description: The location of the proxy image
   name: IMAGE_PROXY
   value: openshift/oauth-proxy:v1.0.0
+- description: The location of alert-buffer image
+  name: IMAGE_ALERTBUFFER
+  value: openshift/prometheus-alert-buffer:v0.0.2
 - description: The secret for the AlertManager
   name: ALERTMANAGER_SECRET
   generate: expression
@@ -68,6 +71,22 @@ objects:
     selector:
       app: alertmanager
 
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: alertbuffer
+    namespace: "${NAMESPACE}"
+    annotations:
+      service.alpha.openshift.io/serving-cert-secret-name: alertbuffer-tls
+  spec:
+    ports:
+    - name: alertbuffer
+      port: 443
+      protocol: TCP
+      targetPort: 8443
+    selector:
+      app: alertbuffer
+
 - apiVersion: route.openshift.io/v1
   kind: Route
   metadata:
@@ -88,6 +107,18 @@ objects:
   spec:
     to:
       name: alertmanager
+    tls:
+      termination: Reencrypt
+      insecureEdgeTerminationPolicy: Redirect
+
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: alertbuffer
+    namespace: "${NAMESPACE}"
+  spec:
+    to:
+      name: alertbuffer
     tls:
       termination: Reencrypt
       insecureEdgeTerminationPolicy: Redirect
@@ -212,6 +243,9 @@ objects:
             message: "Instance {{ $labels.instance }} for job {{ $labels.job }} is down"
 
     prometheus.yml: |
+      global_config:
+        scrape_interval: 10s
+
       rule_files:
         - 'prometheus.rules'
 
@@ -286,6 +320,30 @@ objects:
           action: replace
           target_label: instance
 
+      - job_name: 'alertbuffer'
+        scheme: https
+        tls_config:
+          # the certificate is generated for the service, not the endpoint itself
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+        kubernetes_sd_configs:
+        - role: endpoints
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels:
+          - __meta_kubernetes_service_name
+          - __meta_kubernetes_endpoint_ready
+          - __meta_kubernetes_pod_container_name
+          action: keep
+          regex: alertbuffer;true;proxy
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: instance
+
       - job_name: 'endpoints'
         tls_config:
           insecure_skip_verify: true
@@ -321,6 +379,77 @@ objects:
         - source_labels: [__meta_kubernetes_service_name]
           action: replace
           target_label: service_name
+
+- apiVersion: apps/v1beta1
+  kind: StatefulSet
+  metadata:
+    name: alertbuffer
+    namespace: "${NAMESPACE}"
+  spec:
+    selector:
+      matchLabels:
+        app: alertbuffer
+    updateStrategy:
+      type: RollingUpdate
+    podManagementPolicy: Parallel
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          app: alertbuffer
+        name: alertbuffer
+      spec:
+        serviceAccountName: "${PROMETHEUS_SA}"
+        containers:
+        - name: proxy
+          image: ${IMAGE_PROXY}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 8443
+            name: web
+          args:
+          - -provider=openshift
+          - -https-address=:8443
+          - -http-address=
+          - -email-domain=*
+          - -upstream=http://localhost:9099
+          - -client-id=system:serviceaccount:${NAMESPACE}:${PROMETHEUS_SA}
+          - -openshift-ca=/etc/pki/tls/cert.pem
+          - -openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          - '-openshift-sar={"resource": "namespaces", "verb": "get", "resourceName": "${NAMESPACE}", "namespace": "${NAMESPACE}"}'
+          - '-openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get", "resourceName": "${NAMESPACE}", "namespace": "${NAMESPACE}"}}'
+          - -tls-cert=/etc/tls/private/tls.crt
+          - -tls-key=/etc/tls/private/tls.key
+          - -client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+          - -cookie-secret-file=/etc/proxy/secrets/session_secret
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: alertbuffer-tls
+          - mountPath: /etc/proxy/secrets
+            name: proxy-secret
+        - name: alertbuffer
+          args:
+          - --storage-path=/alertbuffer/messages.db
+          - --listen-address=localhost:9099
+          image: "${IMAGE_ALERTBUFFER}"
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9099
+            name: web
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /alertbuffer
+            name: alertbuffer-data
+
+        volumes:
+        - name: alertbuffer-data
+          emptyDir: {}
+        - name: alertbuffer-tls
+          secret:
+            secretName: alertbuffer-tls
+        - name: proxy-secret
+          secret:
+            secretName: proxy
 
 - apiVersion: apps/v1beta1
   kind: StatefulSet
@@ -420,18 +549,22 @@ objects:
       # The root route on which each incoming alert enters.
       route:
         # default route if none match
-        receiver: alert-buffer-wh
+        receiver: alertbuffer-wh
 
         # The labels by which incoming alerts are grouped together. For example,
         # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
         # be batched into a single group.
-        # TODO:
         group_by: []
 
         # All the above attributes are inherited by all child routes and can
         # overwritten on each.
 
       receivers:
-      - name: alert-buffer-wh
+      - name: alertbuffer-wh
         webhook_configs:
-        - url: http://localhost:9099/topics/alerts
+        - url: https://alertbuffer.myproject.svc/topics/alerts
+# The following parameters aren't yet supported by AlertManager
+#          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+#          tls_config:
+#            # the certificate is generated for the service, not the endpoint itself
+#            insecure_skip_verify: true
