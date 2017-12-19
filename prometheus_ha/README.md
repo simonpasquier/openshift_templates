@@ -7,14 +7,7 @@ through the Kubernetes service discovery.
 
 # Compatibility
 
-This example has only be tested with OpenShift 3.7. Because of an
-[issue](https://github.com/openshift/origin/issues/13401) with DNS resolution,
-AlertManager instances won't setup the mesh automatically. To workaround the
-problem, you need to add the `hostname` field to the endpoints defintion:
-
-```
-$ oc edit endpoints/alertmanager
-```
+This example has only be tested with OpenShift 3.7.
 
 # Setting up the Prometheus account
 

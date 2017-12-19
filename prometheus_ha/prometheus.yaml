@@ -146,6 +146,7 @@ objects:
       type: RollingUpdate
     podManagementPolicy: Parallel
     replicas: 2
+    serviceName: prometheus
     template:
       metadata:
         labels:
@@ -243,7 +244,7 @@ objects:
             message: "Instance {{ $labels.instance }} for job {{ $labels.job }} is down"
 
     prometheus.yml: |
-      global_config:
+      global:
         scrape_interval: 10s
 
       rule_files:
@@ -464,6 +465,7 @@ objects:
       type: RollingUpdate
     podManagementPolicy: Parallel
     replicas: 2
+    serviceName: alertmanager
     template:
       metadata:
         labels:
@@ -502,8 +504,6 @@ objects:
           args:
           - --log.level=debug
           - --mesh.listen-address=:6783
-          # Declare only the first pod as peer otherwise the mesh library
-          # messes up with "multiple connections" errors.
           - --mesh.peer=alertmanager-0.alertmanager.${NAMESPACE}.endpoints:6783
           - --mesh.password=${ALERTMANAGER_SECRET}
           - --config.file=/etc/alertmanager/alertmanager.yml
