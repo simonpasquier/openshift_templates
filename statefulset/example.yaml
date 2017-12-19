@@ -35,6 +35,7 @@ objects:
       type: RollingUpdate
     podManagementPolicy: Parallel
     replicas: 2
+    serviceName: example
     template:
       metadata:
         labels:
