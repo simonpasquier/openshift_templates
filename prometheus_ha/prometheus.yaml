@@ -282,15 +282,65 @@ objects:
   data:
     prometheus.rules: |
       groups:
-      - name: example-rules
-        interval: 30s # defaults to global interval
+      - name: prometheus
+        interval: 30s
         rules:
-        - alert: Target Down
-          expr: up == 0
+        - alert: Prometheus down
+          expr: up{job="prometheus"} == 0 or absent(up{job="prometheus"})
           for: 1m
-          annotations:
+          labels:
             severity: "Critical"
-            message: "Instance {{ $labels.instance }} for job {{ $labels.job }} is down"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} is down."
+        - alert: AlertManager down
+          expr: up{job="alertmanager"} == 0 or absent(up{job="alertmanager"})
+          for: 1m
+          labels:
+            severity: "Critical"
+          annotations:
+            message: "AlertManager instance {{ $labels.instance }} is down."
+        - alert: AlertManager not discovered
+          expr: prometheus_notifications_alertmanagers_discovered < 2
+          for: 1m
+          labels:
+            severity: "Critical"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has discovered only {{ $value }} AlertManager instances."
+        - alert: Scrapes with rejected samples
+          expr: increase(prometheus_target_scrapes_exceeded_sample_limit_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has scraped {{ $value }} targets exceeding the sample limit in the last 5 minutes."
+        - alert: WAL corruption
+          expr: increase(tsdb_wal_corruptions_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: "Critical"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} WAL corruptions in the last 5 minutes."
+        - alert: Compaction failures
+          expr: increase(prometheus_tsdb_compactions_failed_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} compaction failures in the last 5 minutes."
+        - alert: File SD errors
+          expr: increase(prometheus_sd_file_read_errors_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} read errors for the file SD in the last 5 minutes."
+        - alert: Rule evaluation failures
+          expr: increase(prometheus_rule_evaluation_failures_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} evaluation errors for {{ $labels.rule_type }} rules in the last 5 minutes."
 
     prometheus.yml: |
       global:
@@ -514,16 +564,9 @@ objects:
 
       # The root route on which each incoming alert enters.
       route:
-        # default route if none match
+        # Send all alerts to alert-buffer and group by job & severity
         receiver: alertbuffer-wh
-
-        # The labels by which incoming alerts are grouped together. For example,
-        # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
-        # be batched into a single group.
-        group_by: []
-
-        # All the above attributes are inherited by all child routes and can
-        # overwritten on each.
+        group_by: [job, severity]
 
       receivers:
       - name: alertbuffer-wh
