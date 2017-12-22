@@ -342,6 +342,17 @@ objects:
           annotations:
             message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} evaluation errors for {{ $labels.rule_type }} rules in the last 5 minutes."
 
+      - name: endpoints
+        interval: 30s
+        rules:
+        - alert: Endpoint down
+          expr: up{job="endpoints"} == 0
+          for: 1m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} is down."
+
     prometheus.yml: |
       global:
         scrape_interval: 10s
