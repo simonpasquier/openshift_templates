@@ -183,9 +183,10 @@ objects:
             name: proxy-secret
         - name: prometheus
           args:
-          - --storage.tsdb.retention=6h
+          - --storage.tsdb.retention=24h
           - --config.file=/etc/prometheus/prometheus.yml
           - --web.enable-admin-api
+          - --log.level=debug
           image: ${IMAGE_PROMETHEUS}
           imagePullPolicy: IfNotPresent
           volumeMounts:
@@ -239,6 +240,7 @@ objects:
           - --mesh.peer=alertmanager-0.prometheus.${NAMESPACE}.endpoints:6783
           - --mesh.password=${ALERTMANAGER_SECRET}
           - --config.file=/etc/alertmanager/alertmanager.yml
+          - --log.level=debug
           image: "${IMAGE_ALERTMANAGER}"
           imagePullPolicy: IfNotPresent
           ports:
