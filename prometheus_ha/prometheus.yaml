@@ -329,6 +329,13 @@ objects:
             severity: "Warning"
           annotations:
             message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }} compaction failures in the last 5 minutes."
+        - alert: TSDB reload failures
+          expr: rate(prometheus_tsdb_reloads_failures_total[5m]) / rate(prometheus_tsdb_reloads_total[5m]) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Critical"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }}% of block reload failures in the last 5 minutes."
         - alert: File SD errors
           expr: rate(prometheus_sd_file_read_errors_total[5m]) / rate(prometheus_sd_file_scan_duration_seconds_count[5m]) * 100 > 5
           for: 5m
