@@ -500,6 +500,22 @@ objects:
           action: replace
           target_label: instance
 
+      # See the namespaced_kube-state-metrics directory
+      - job_name: 'kube-state-metrics'
+        scheme: http
+
+        kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names:
+            - "${NAMESPACE}"
+
+        relabel_configs:
+        - source_labels:
+          - __meta_kubernetes_pod_container_name
+          action: keep
+          regex: kube-state-metrics
+
       - job_name: 'endpoints'
         tls_config:
           insecure_skip_verify: true
