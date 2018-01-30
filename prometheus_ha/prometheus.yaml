@@ -237,7 +237,7 @@ objects:
         - name: alertmanager
           args:
           - --mesh.listen-address=:6783
-          - --mesh.peer=alertmanager-0.prometheus.${NAMESPACE}.endpoints:6783
+          - --mesh.peer=prometheus-0.prometheus.${NAMESPACE}.endpoints:6783
           - --mesh.password=${ALERTMANAGER_SECRET}
           - --config.file=/etc/alertmanager/alertmanager.yml
           - --log.level=debug
@@ -350,6 +350,42 @@ objects:
             severity: "Warning"
           annotations:
             message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }}% of evaluation errors in the last 5 minutes."
+        # The following alerts may not reach the final receiver(s) since they fire when AlertManager isn't working properly
+        - alert: Alert notification errors
+          expr: rate(prometheus_notifications_errors_total[5m]) / rate(prometheus_notifications_sent_total[5m]) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Prometheus instance {{ $labels.instance }} has encountered {{ $value }}% of alert notification errors in the last 5 minutes."
+        - alert: Invalid alerts
+          expr: rate(alertmanager_alerts_invalid_total[5m]) / sum(rate(alertmanager_alerts_received_total[5m])) without (status) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Alertmanager instance {{ $labels.instance }} has encountered {{ $value }}% of invalid alerts in the last 5 minutes."
+        - alert: Failed notifications
+          expr: rate(alertmanager_notifications_failed_total[5m]) / rate(alertmanager_notifications_total[5m]) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Receiver {{ $labels.receiver }} on Alertmanager instance {{ $labels.instance }} has encountered {{ $value }}% of failures in the last 5 minutes."
+        - alert: Silence query errors
+          expr: rate(alertmanager_silences_query_errors_total[5m]) / rate(alertmanager_silences_queries_total[5m]) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Alertmanager instance {{ $labels.instance }} has encountered {{ $value }}% of errors on silence queries in the last 5 minutes."
+        - alert: Notification log query errors
+          expr: rate(alertmanager_nflog_query_errors_total[5m]) / rate(alertmanager_nflog_queries_total[5m]) * 100 > 5
+          for: 5m
+          labels:
+            severity: "Warning"
+          annotations:
+            message: "Alertmanager instance {{ $labels.instance }} has encountered {{ $value }}% of errors on notification log queries in the last 5 minutes."
 
       - name: endpoints
         interval: 30s
@@ -512,6 +548,7 @@ objects:
     updateStrategy:
       type: RollingUpdate
     podManagementPolicy: Parallel
+    serviceName: alertbuffer
     replicas: 1
     template:
       metadata:
@@ -550,7 +587,7 @@ objects:
         - name: alertbuffer
           args:
           - --storage-path=/alertbuffer/messages.db
-          - --listen-address=localhost:9099
+          - --listen-address=0.0.0.0:9099
           image: "${IMAGE_ALERTBUFFER}"
           imagePullPolicy: IfNotPresent
           ports:
@@ -591,7 +628,7 @@ objects:
       receivers:
       - name: alertbuffer-wh
         webhook_configs:
-        - url: https://alertbuffer.myproject.svc/topics/alerts
+        - url: http://alertbuffer-0.alertbuffer.myproject.endpoints:9099/topics/alerts
 # The following parameters aren't yet supported by AlertManager
 #          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 #          tls_config:
