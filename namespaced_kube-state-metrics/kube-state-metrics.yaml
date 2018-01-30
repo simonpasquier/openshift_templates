@@ -1,0 +1,110 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+
+metadata:
+  name: ksm-sa
+  annotations:
+    "openshift.io/display-name": kube-state-metrics
+    description: |
+      A service for collecting state metrics from Kubernetes.
+    iconClass: icon-cogs
+    tags: "monitoring,prometheus,time-series"
+
+parameters:
+- description: The namespace where to deploy the kube-state-metrics service.
+  name: NAMESPACE
+  required: true
+- description: The location of the kube-state-metrics image
+  name: IMAGE_KUBE_STATE_METRICS
+  value: gcr.io/google_containers/kube-state-metrics:v1.2.0
+
+objects:
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: kube-state-metrics
+    namespace: "${NAMESPACE}"
+
+- apiVersion: v1
+  kind: Role
+  metadata:
+    name: ksm-reader
+    namespace: "${NAMESPACE}"
+  rules:
+  - apiGroups: null
+    resources:
+    - pods
+    - endpoints
+    - services
+    - resourcequotas
+    - replicationcontrollers
+    - limitranges
+    - persistentvolumeclaims
+    verbs: ["list", "watch"]
+  - apiGroups: ["extensions"]
+    resources:
+    - daemonsets
+    - deployments
+    - replicasets
+    verbs: ["list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+    - statefulsets
+    verbs: ["list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+    - cronjobs
+    - jobs
+    verbs: ["list", "watch"]
+
+- apiVersion: v1
+  kind: RoleBinding
+  metadata:
+    name: ksm-reader
+    namespace: "${NAMESPACE}"
+  roleRef:
+    name: ksm-reader
+    namespace: "${NAMESPACE}"
+  subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+
+- apiVersion: apps/v1beta1
+  kind: Deployment
+  metadata:
+    name: kube-state-metrics
+    namespace: "${NAMESPACE}"
+  spec:
+    selector:
+      matchLabels:
+        app: kube-state-metrics
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          app: kube-state-metrics
+      spec:
+        serviceAccountName: kube-state-metrics
+        containers:
+        - name: kube-state-metrics
+          args:
+          - --port
+          - "8080"
+          - --namespace
+          - ${NAMESPACE}
+          - --telemetry-port
+          - "8081"
+          - --collectors
+          - daemonsets,deployments,endpoints,jobs,limitranges,persistentvolumeclaims,pods,replicasets,replicationcontrollers,resourcequotas,services,statefulsets
+          image: "${IMAGE_KUBE_STATE_METRICS}"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          ports:
+          - name: kube-metrics
+            containerPort: 8080
+          - name: ksm-metrics
+            containerPort: 8081
