@@ -5,7 +5,7 @@ metadata:
   annotations:
     "openshift.io/display-name": Kubenertes state metrics
     description: |
-      A service for collecting state metrics from Kubernetes clusteres.
+      A service for collecting state metrics from Kubernetes clusters.
     iconClass: icon-cogs
     tags: "monitoring,prometheus,time-series"
 parameters:
