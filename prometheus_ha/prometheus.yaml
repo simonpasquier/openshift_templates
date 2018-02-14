@@ -236,9 +236,8 @@ objects:
             name: proxy-secret
         - name: alertmanager
           args:
-          - --mesh.listen-address=:6783
-          - --mesh.peer=prometheus-0.prometheus.${NAMESPACE}.endpoints:6783
-          - --mesh.password=${ALERTMANAGER_SECRET}
+          - --cluster.peer=prometheus-0.prometheus.${NAMESPACE}.endpoints:9094
+          - --cluster.peer=prometheus-1.prometheus.${NAMESPACE}.endpoints:9094
           - --config.file=/etc/alertmanager/alertmanager.yml
           - --log.level=debug
           image: "${IMAGE_ALERTMANAGER}"
@@ -246,6 +245,9 @@ objects:
           ports:
           - containerPort: 9093
             name: web
+            protocol: TCP
+          - containerPort: 9094
+            name: cluster
             protocol: TCP
           volumeMounts:
           - mountPath: /etc/alertmanager
