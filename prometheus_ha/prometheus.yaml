@@ -144,7 +144,6 @@ objects:
         app: prometheus
     updateStrategy:
       type: RollingUpdate
-    podManagementPolicy: Parallel
     replicas: 2
     serviceName: prometheus
     template:
