@@ -144,7 +144,6 @@ objects:
         app: prometheus
     updateStrategy:
       type: RollingUpdate
-    podManagementPolicy: Parallel
     replicas: 2
     serviceName: prometheus
     template:
@@ -424,9 +423,8 @@ objects:
           relabel_configs:
           - source_labels:
             - __meta_kubernetes_service_name
-            - __meta_kubernetes_endpoint_ready
             action: keep
-            regex: alertmanager;true
+            regex: alertmanager
 
       scrape_configs:
       - job_name: 'prometheus'
@@ -446,10 +444,9 @@ objects:
         # metrics are pulled through the OAuth proxy container
         - source_labels:
           - __meta_kubernetes_service_name
-          - __meta_kubernetes_endpoint_ready
           - __meta_kubernetes_pod_container_name
           action: keep
-          regex: prometheus;true;proxy
+          regex: prometheus;proxy
         - source_labels: [__meta_kubernetes_pod_name]
           action: replace
           target_label: instance
@@ -470,10 +467,9 @@ objects:
         relabel_configs:
         - source_labels:
           - __meta_kubernetes_service_name
-          - __meta_kubernetes_endpoint_ready
           - __meta_kubernetes_pod_container_name
           action: keep
-          regex: alertmanager;true;am-proxy
+          regex: alertmanager;am-proxy
         - source_labels: [__meta_kubernetes_pod_name]
           action: replace
           target_label: instance
@@ -494,10 +490,9 @@ objects:
         relabel_configs:
         - source_labels:
           - __meta_kubernetes_service_name
-          - __meta_kubernetes_endpoint_ready
           - __meta_kubernetes_pod_container_name
           action: keep
-          regex: alertbuffer;true;proxy
+          regex: alertbuffer;proxy
         - source_labels: [__meta_kubernetes_pod_name]
           action: replace
           target_label: instance
@@ -530,9 +525,6 @@ objects:
 
         relabel_configs:
         - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-          action: keep
-          regex: true
-        - source_labels: [__meta_kubernetes_endpoint_ready]
           action: keep
           regex: true
         - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
