@@ -235,8 +235,7 @@ objects:
             name: proxy-secret
         - name: alertmanager
           args:
-          - --cluster.peer=prometheus-0.prometheus.${NAMESPACE}.endpoints:9094
-          - --cluster.peer=prometheus-1.prometheus.${NAMESPACE}.endpoints:9094
+          - --cluster.peer=_endpoints.prometheus.${NAMESPACE}.endpoints:9094
           - --config.file=/etc/alertmanager/alertmanager.yml
           - --log.level=debug
           image: "${IMAGE_ALERTMANAGER}"
