@@ -238,6 +238,7 @@ objects:
           - --cluster.peer=_endpoints.prometheus.${NAMESPACE}.endpoints:9094
           - --config.file=/etc/alertmanager/alertmanager.yml
           - --log.level=debug
+          - --storage.path=/alertmanager
           image: "${IMAGE_ALERTMANAGER}"
           imagePullPolicy: IfNotPresent
           ports:
