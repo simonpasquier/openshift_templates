@@ -19,16 +19,13 @@ parameters:
   value: prometheus
 - description: The location of the Prometheus image
   name: IMAGE_PROMETHEUS
-  value: openshift/prometheus:v2.0.0
+  value: quay.io/openshift/origin-prometheus:v3.11
 - description: The location of the AlertManager image
   name: IMAGE_ALERTMANAGER
-  value: openshift/prometheus-alertmanager:v0.9.1
+  value: quay.io/openshift/origin-prometheus-alertmanager:v3.11
 - description: The location of the proxy image
   name: IMAGE_PROXY
   value: openshift/oauth-proxy:v1.0.0
-- description: The location of alert-buffer image
-  name: IMAGE_ALERTBUFFER
-  value: openshift/prometheus-alert-buffer:v0.0.2
 - description: The secret for the AlertManager
   name: ALERTMANAGER_SECRET
   generate: expression
@@ -389,7 +386,7 @@ objects:
             message: "Alertmanager instance {{ $labels.instance }} has encountered {{ $value }}% of errors on notification log queries in the last 5 minutes."
 
       - name: endpoints
-        interval: 30s
+        interval: 20s
         rules:
         - alert: Endpoint down
           expr: up{job="endpoints"} == 0
@@ -397,7 +394,7 @@ objects:
           labels:
             severity: "Warning"
           annotations:
-            message: "Prometheus instance {{ $labels.instance }} is down."
+            message: "Endpoint instance {{ $labels.instance }} is down."
 
     prometheus.yml: |
       global:
@@ -423,8 +420,9 @@ objects:
           relabel_configs:
           - source_labels:
             - __meta_kubernetes_service_name
+            - __meta_kubernetes_pod_container_name
             action: keep
-            regex: alertmanager
+            regex: alertmanager;am-proxy
 
       scrape_configs:
       - job_name: 'prometheus'
@@ -545,78 +543,12 @@ objects:
         - source_labels: [__meta_kubernetes_service_name]
           action: replace
           target_label: service_name
-
-- apiVersion: apps/v1beta1
-  kind: StatefulSet
-  metadata:
-    name: alertbuffer
-    namespace: "${NAMESPACE}"
-  spec:
-    selector:
-      matchLabels:
-        app: alertbuffer
-    updateStrategy:
-      type: RollingUpdate
-    podManagementPolicy: Parallel
-    serviceName: alertbuffer
-    replicas: 1
-    template:
-      metadata:
-        labels:
-          app: alertbuffer
-        name: alertbuffer
-      spec:
-        serviceAccountName: "${PROMETHEUS_SA}"
-        containers:
-        - name: proxy
-          image: ${IMAGE_PROXY}
-          imagePullPolicy: IfNotPresent
-          ports:
-          - containerPort: 8443
-            name: web
-          args:
-          - -provider=openshift
-          - -https-address=:8443
-          - -http-address=
-          - -email-domain=*
-          - -upstream=http://localhost:9099
-          - -client-id=system:serviceaccount:${NAMESPACE}:${PROMETHEUS_SA}
-          - -openshift-ca=/etc/pki/tls/cert.pem
-          - -openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-          - '-openshift-sar={"resource": "namespaces", "verb": "get", "resourceName": "${NAMESPACE}", "namespace": "${NAMESPACE}"}'
-          - '-openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get", "resourceName": "${NAMESPACE}", "namespace": "${NAMESPACE}"}}'
-          - -tls-cert=/etc/tls/private/tls.crt
-          - -tls-key=/etc/tls/private/tls.key
-          - -client-secret-file=/var/run/secrets/kubernetes.io/serviceaccount/token
-          - -cookie-secret-file=/etc/proxy/secrets/session_secret
-          volumeMounts:
-          - mountPath: /etc/tls/private
-            name: alertbuffer-tls
-          - mountPath: /etc/proxy/secrets
-            name: proxy-secret
-        - name: alertbuffer
-          args:
-          - --storage-path=/alertbuffer/messages.db
-          - --listen-address=0.0.0.0:9099
-          image: "${IMAGE_ALERTBUFFER}"
-          imagePullPolicy: IfNotPresent
-          ports:
-          - containerPort: 9099
-            name: web
-            protocol: TCP
-          volumeMounts:
-          - mountPath: /alertbuffer
-            name: alertbuffer-data
-
-        volumes:
-        - name: alertbuffer-data
-          emptyDir: {}
-        - name: alertbuffer-tls
-          secret:
-            secretName: alertbuffer-tls
-        - name: proxy-secret
-          secret:
-            secretName: proxy
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          action: replace
+          target_label: container_name
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: pod_name
 
 - apiVersion: v1
   kind: ConfigMap
@@ -631,16 +563,8 @@ objects:
 
       # The root route on which each incoming alert enters.
       route:
-        # Send all alerts to alert-buffer and group by job & severity
-        receiver: alertbuffer-wh
+        receiver: dev-null
         group_by: [job, severity]
 
       receivers:
-      - name: alertbuffer-wh
-        webhook_configs:
-        - url: http://alertbuffer-0.alertbuffer.myproject.endpoints:9099/topics/alerts
-# The following parameters aren't yet supported by AlertManager
-#          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-#          tls_config:
-#            # the certificate is generated for the service, not the endpoint itself
-#            insecure_skip_verify: true
+      - name: dev-null
